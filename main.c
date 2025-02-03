@@ -133,6 +133,30 @@ void sendCharUART2(uint8_t charToSend)
 	while(!(USART2->ISR & (1<<6))); 
 }
 
+void sendStringUART2(char *charArrayToSend)
+{
+	// Write char to USART2 transmission data register
+	while(*charArrayToSend)
+	{
+		sendCharUART2(*charArrayToSend++);
+	}
+	// Wait till transmission complete bit is set
+	while(!(USART2->ISR & (1<<6))); 
+}
+
+uint8_t getCharUART2(void)
+{
+	uint8_t temp;
+	
+	while(!(USART2->ISR & (1<<5)))
+	{
+	}
+	
+	temp = USART2->RDR;
+	
+	return temp;
+}
+
 // Toggle LED pin using XOR bitwise operator	
 static void toggleLEDGPIOA5(void){
 	GPIOA->ODR ^= (1<<5);
@@ -145,7 +169,8 @@ void TIM2_IRQHandler(void)
   {	
 		// Toggle LED
     toggleLEDGPIOA5();
-		sendCharUART2('G');
+		sendStringUART2("Gerardo\n");
+		sendStringUART2("\b\b\b\b\b\b\b");
     TIM2->SR &= ~TIM_SR_UIF;  /* Clear the Interrupt Status */
   }
 }
