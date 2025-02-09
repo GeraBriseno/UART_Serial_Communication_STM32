@@ -1,5 +1,14 @@
 #include "stm32f303xe.h"
 #include <math.h>
+#include <stdio.h>
+
+char lo;
+char hi;
+
+char* lop = &lo;
+char* hip = &hi;
+
+volatile uint16_t receiveBufferUSART2 = '\0';
 
 /* Function to configure PLL as System Clock with a frequency of 72 MHz, HCLK with the same 72 MHz frequency
 	 and HSE as PLL input clock */
@@ -105,9 +114,6 @@ void enableUART2(void)
 	// Clear USART2 register
 	USART2->CR1 = 0x00;
 	
-	// Enable USART2
-	USART2->CR1 |= (1U<<0);
-	
 	// Set word length as 8 bit
 	USART2->CR1 &= ~(1U<<12);
 	
@@ -122,6 +128,15 @@ void enableUART2(void)
 	// Enable USART2 transmitter
 	USART2->CR1 |= (1U<<3);
 	
+	// Enable USART2
+	USART2->CR1 |= (1U<<0);
+	
+	// ENABLE GLOBAL NVIC INTERRUPTS FOR USART2
+	NVIC_EnableIRQ(USART2_IRQn);
+	
+	// Enable Receive data register not empty (data ready to be read) Interrupt
+	USART2->CR1 |= (1U<<5);
+	
 }
 
 void sendCharUART2(uint8_t charToSend)
@@ -130,7 +145,7 @@ void sendCharUART2(uint8_t charToSend)
 	USART2->TDR = charToSend;
 	
 	// Wait till transmission complete bit is set
-	while(!(USART2->ISR & (1<<6))); 
+	while(!(USART2->ISR & (1<<7))); 
 }
 
 void sendStringUART2(char *charArrayToSend)
@@ -142,19 +157,6 @@ void sendStringUART2(char *charArrayToSend)
 	}
 	// Wait till transmission complete bit is set
 	while(!(USART2->ISR & (1<<6))); 
-}
-
-uint8_t getCharUART2(void)
-{
-	uint8_t temp;
-	
-	while(!(USART2->ISR & (1<<5)))
-	{
-	}
-	
-	temp = USART2->RDR;
-	
-	return temp;
 }
 
 // Toggle LED pin using XOR bitwise operator	
@@ -169,10 +171,30 @@ void TIM2_IRQHandler(void)
   {	
 		// Toggle LED
     toggleLEDGPIOA5();
-		sendStringUART2("Gerardo\n");
-		sendStringUART2("\b\b\b\b\b\b\b");
+		
+		// Print out received data to serial monitor
+		sendStringUART2("RXE: ");
+		sendStringUART2(lop);
+		sendStringUART2(hip);
+		sendStringUART2(" ");
+		
     TIM2->SR &= ~TIM_SR_UIF;  /* Clear the Interrupt Status */
   }
+}
+
+// USART2 interrupt handler
+void USART2_IRQHandler(void){
+	
+    // 'Receive register not empty' interrupt.
+    if ( USART2->ISR & (1<<5) ) {
+      
+			// Copy new data into the buffer.
+      receiveBufferUSART2 = USART2->RDR;
+			
+			lo = receiveBufferUSART2 & 0xFF;
+			hi = receiveBufferUSART2 >> 8;
+			
+    }
 }
 
 int main (void){
@@ -184,6 +206,6 @@ int main (void){
 	
 	while (1)
 	{
-
+		
 	}
 }
