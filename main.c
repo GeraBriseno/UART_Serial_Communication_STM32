@@ -1,14 +1,19 @@
 #include "stm32f303xe.h"
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
-char lo;
-char hi;
+// Max size of string to receive
+#define RX_BUFFER_SIZE 128
 
-char* lop = &lo;
-char* hip = &hi;
+// Buffer for received string
+char rxString[RX_BUFFER_SIZE];
 
-volatile uint16_t receiveBufferUSART2 = '\0';
+// Index for current buffer position, volatile since it is modified inside USART2 ISR
+volatile uint16_t rxIndex = 0;
+
+// Flag to indicate clear trigger char received, volatile since it is modified inside USART2 ISR
+volatile uint8_t clearStringFlag = 0;
 
 /* Function to configure PLL as System Clock with a frequency of 72 MHz, HCLK with the same 72 MHz frequency
 	 and HSE as PLL input clock */
@@ -63,11 +68,8 @@ static void GPIO_Config(void)
 	// 1. Enable the GPIOA CLOCK
 	RCC->AHBENR |= (1<<17);  
 	
-	// 2. Set the Pin as OUTPUT
+	// 2. Set the built-in LED Pin as OUTPUT
 	GPIOA->MODER |= (1<<10);  // pin PA5(bits 11:10) as Output (01)
-	//GPIOA->MODER |= (1<<12);  // pin PA6(bits 13:12) as Output (01)
-	//GPIOA->MODER |= (1<<14);  // pin PA7(bits 15:14) as Output (01)
-	//GPIOA->MODER |= (1<<16);  // pin PA8(bits 17:16) as Output (01)
 	
 	// 3. Configure the OUTPUT MODE
 	GPIOA->OTYPER = 0;
@@ -104,14 +106,14 @@ void enableUART2(void)
 	GPIOA->MODER |= (2<<6);
 	
 	// Set High speed for PA2 and PA3
-	GPIOA->OSPEEDR = (2<<4) | (2<<6);
+	GPIOA->OSPEEDR |= (2<<4) | (2<<6);
 	
 	//Select AF7 for PA2 and PA3 (USART2 TX and RX respectively)
 	GPIOA->AFR[0] |= (7<<8);
 	
 	GPIOA->AFR[0] |= (7<<12);
 	
-	// Clear USART2 register
+	// Reset USART2
 	USART2->CR1 = 0x00;
 	
 	// Set word length as 8 bit
@@ -128,14 +130,14 @@ void enableUART2(void)
 	// Enable USART2 transmitter
 	USART2->CR1 |= (1U<<3);
 	
+	// Enable Receive data register not empty (data ready to be read) Interrupt
+	USART2->CR1 |= (1U<<5);
+	
 	// Enable USART2
 	USART2->CR1 |= (1U<<0);
 	
 	// ENABLE GLOBAL NVIC INTERRUPTS FOR USART2
 	NVIC_EnableIRQ(USART2_IRQn);
-	
-	// Enable Receive data register not empty (data ready to be read) Interrupt
-	USART2->CR1 |= (1U<<5);
 	
 }
 
@@ -163,38 +165,92 @@ void sendStringUART2(char *charArrayToSend)
 static void toggleLEDGPIOA5(void){
 	GPIOA->ODR ^= (1<<5);
 }
+
+// Turn LED pin on using OR bitwise operator	
+static void turnOnLEDGPIOA5(void){
+	GPIOA->ODR |= (1U<<5);
+}
+
+// Turn LED pin off using AND and NOT bitwise operators
+static void turnOffLEDGPIOA5(void){
+	GPIOA->ODR &= ~(1U<<5);
+}
 	
 // TIM2 ISR funtion	
 void TIM2_IRQHandler(void)
-{
-  if(TIM2->SR & TIM_SR_UIF)   /* if UIF flag is set */
+{	
+	//If UIF flag is set
+  if(TIM2->SR & TIM_SR_UIF)
   {	
-		// Toggle LED
-    toggleLEDGPIOA5();
-		
-		// Print out received data to serial monitor
-		sendStringUART2("RXE: ");
-		sendStringUART2(lop);
-		sendStringUART2(hip);
-		sendStringUART2(" ");
-		
-    TIM2->SR &= ~TIM_SR_UIF;  /* Clear the Interrupt Status */
+		// Clear interrupt status
+    TIM2->SR &= ~TIM_SR_UIF;
   }
 }
 
 // USART2 interrupt handler
 void USART2_IRQHandler(void){
+
+	// 'Receive register not empty' RXNE interrupt
+	if(USART2->ISR & (1U<<5))
+    {
+			// Copy new char into the buffer
+			char receivedChar = USART2->RDR;
+
+			// If buffer is not full
+			if(rxIndex < RX_BUFFER_SIZE - 1)
+			{
+				// Add char to string	
+				rxString[rxIndex++] = receivedChar;
+
+					// Check for string clearing trigger char
+					if(receivedChar == 'x')
+					{
+						// Set flag to clear string
+						clearStringFlag = 1;
+						// Reset buffer index
+						rxIndex = 0;
+					}
+			}
+			// Buffer is full
+			else
+			{
+				// reset buffer index	
+				rxIndex = 0;
+			}
+	}
+
+	// Clear ICR register flags
+	USART2->ICR = 0xFFFFFFFF;
+
+}
+
+// Function to process the string received, will run in main while loop
+void processReceivedString(void)
+{	
+	// Conditionals to control in-built LED
+	if(!strcmp(rxString,"off"))
+		{
+			turnOffLEDGPIOA5();
+			//sendStringUART2(rxString);
+		}
+	else if(!strcmp(rxString,"on"))
+		{
+			turnOnLEDGPIOA5();
+			//sendStringUART2(rxString);
+		}
 	
-    // 'Receive register not empty' interrupt.
-    if ( USART2->ISR & (1<<5) ) {
-      
-			// Copy new data into the buffer.
-      receiveBufferUSART2 = USART2->RDR;
-			
-			lo = receiveBufferUSART2 & 0xFF;
-			hi = receiveBufferUSART2 >> 8;
-			
-    }
+	// If trigger char is detected
+	if(clearStringFlag)
+	{	
+		// Reset flag
+		clearStringFlag = 0;
+	
+		// Clear the string's memory
+		memset(rxString, 0, RX_BUFFER_SIZE);
+		
+		// The string memory has been cleared, new commands can be sent
+		sendStringUART2("Cleared");
+	}
 }
 
 int main (void){
@@ -206,6 +262,6 @@ int main (void){
 	
 	while (1)
 	{
-		
+		processReceivedString();
 	}
 }
