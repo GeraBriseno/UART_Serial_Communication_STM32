@@ -17,7 +17,6 @@ volatile uint8_t clearStringFlag = 0;
 
 /* Function to configure PLL as System Clock with a frequency of 72 MHz, HCLK with the same 72 MHz frequency
 	 and HSE as PLL input clock */
-
 static void SysClockConfigF303re(void)
 {
 
@@ -95,12 +94,13 @@ static void configureTIM2(void){
 	TIM2->CR1 = TIM_CR1_CEN;  // |= (1 << 0);  //ENABLE COUNTER FOR TIM2
 	}
 
+// Function to configure and enable USART2
 void enableUART2(void)
 {	
 	// Enable USART2 Clock
 	RCC->APB1ENR |= (1<<17);
 	
-	// Set PA2 and PA3 pins as alternate mode (these will be our TX and RX oins respectively)
+	// Set PA2 and PA3 pins as alternate mode (these will be our TX and RX pins respectively)
 	GPIOA->MODER |= (2<<4);
 	
 	GPIOA->MODER |= (2<<6);
@@ -141,6 +141,7 @@ void enableUART2(void)
 	
 }
 
+// Function to send single char over UART2
 void sendCharUART2(uint8_t charToSend)
 {
 	// Write char to USART2 transmission data register
@@ -150,6 +151,7 @@ void sendCharUART2(uint8_t charToSend)
 	while(!(USART2->ISR & (1<<7))); 
 }
 
+// Function to send string over UART2
 void sendStringUART2(char *charArrayToSend)
 {
 	// Write char to USART2 transmission data register
@@ -158,7 +160,7 @@ void sendStringUART2(char *charArrayToSend)
 		sendCharUART2(*charArrayToSend++);
 	}
 	// Wait till transmission complete bit is set
-	while(!(USART2->ISR & (1<<6))); 
+	while(!(USART2->ISR & (1<<6)));
 }
 
 // Toggle LED pin using XOR bitwise operator	
@@ -187,7 +189,7 @@ void TIM2_IRQHandler(void)
   }
 }
 
-// USART2 interrupt handler
+// USART2 ISR function
 void USART2_IRQHandler(void){
 
 	// 'Receive register not empty' RXNE interrupt
@@ -214,7 +216,7 @@ void USART2_IRQHandler(void){
 			// Buffer is full
 			else
 			{
-				// reset buffer index	
+				// Reset buffer index	
 				rxIndex = 0;
 			}
 	}
@@ -227,7 +229,7 @@ void USART2_IRQHandler(void){
 // Function to process the string received, will run in main while loop
 void processReceivedString(void)
 {	
-	// Conditionals to control in-built LED
+	// Conditionals to control built-in LED
 	if(!strcmp(rxString,"off"))
 		{
 			turnOffLEDGPIOA5();
@@ -239,7 +241,7 @@ void processReceivedString(void)
 			//sendStringUART2(rxString);
 		}
 	
-	// If trigger char is detected
+	// If clear string trigger char is detected
 	if(clearStringFlag)
 	{	
 		// Reset flag
