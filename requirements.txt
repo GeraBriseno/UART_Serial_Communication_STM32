@@ -1,0 +1,6 @@
+Package    Version
+---------- -------
+pip        25.0.1
+pyserial   3.5
+setuptools 66.0.0
+wheel      0.38.4
